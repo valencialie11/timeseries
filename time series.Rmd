@@ -1,0 +1,121 @@
+---
+title: "time series"
+author: "Valencia Lie"
+date: "01/08/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+In this report, I will forecast future data about New Delhi's mean temperature based on past data using time series.
+
+# Structure of this report
+- Read data and pre-processing
+- Exploratory Data Analysis 
+- Time Series object and decomposition
+- Modelling and forecast
+  - SMA
+  - SES, DES, TES
+  - ARIMA
+  - SARIMA
+  - STLM
+- Evaluation of model and comparison:
+  - RMSE, MAPE 
+  - Violation of Asumptions:
+    - No autocorrelation between errors
+    - Normality of error
+
+# Read data and pre-processing
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+train <- read_csv("DailyDelhiClimateTrain.csv")
+test <- read_csv("DailyDelhiClimateTest.csv")
+
+combine <- rbind(train, test)
+```
+
+```{r}
+glimpse(combine)
+anyNA(combine)
+summary(combine)
+```
+From the summary for both the combined dataset, we can tell that there is no missing dates (consecutive dates in time series forecasting is incredibly important!) because the mean and median of the dates are exactly the same. 
+
+# Exploratory Data Analysis 
+
+We will first do some visualisation to the mean temp data in the dataset to get a feel of the trend and seasonality.
+```{r warning=FALSE, message=FALSE}
+library(ggplot2)
+
+ggplot(data = combine, mapping = aes(x = date, y = meantemp)) +
+  geom_line() +
+  theme_minimal()
+```
+
+From the above visualisation, we can easily tell that there is seasonality (repeated pattern every year) and that it is of the type additive and not multiplicative.
+
+Logically, this pattern makes sense. This is because New Delhi experiences monsoon every June-September, which causes the mean temperature to dip in these few months. Once the monsoon ends, the mean temperature will then increase again and peak right before the monsoon season hits. Since this monsoon season is a yearly occurrence (and not once off), this causes the seasonality in the data shown. 
+
+# Time Series object and decomposition
+
+```{r message=FALSE, warning=FALSE}
+library(forecast)
+combine_ts <- ts(data = combine$meantemp, start = c(2013,01), end = c(2017,04), frequency = 365)
+
+combine_ts %>% 
+  decompose(type = "additive") %>% 
+  autoplot()
+```
+
+We can see from the decomposed model that there is actually an upward trend in the mean temperature of New Delhi throughout the years. Again, logically, this makes sense because of climate change that has plagued our world and cause every country's mean temperature to rise exponentially.
+
+# Cross Validation
+```{r}
+train <- head(combine, -365) 
+test <- tail(combine, 365)
+```
+
+# Modelling and forecast
+
+## SMA
+
+
+
+## SES, DES, TES
+
+
+
+## ARIMA
+
+
+
+## SARIMA
+
+
+
+## STLM
+
+
+
+# Evaluation of model and comparison
+
+
+
+## RMSE, MAPE 
+
+
+
+## Asumptions
+
+
+
+### No autocorrelation between errors
+
+
+
+### Normality of error
+
+
