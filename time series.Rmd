@@ -81,8 +81,7 @@ test <- tail(combine, 365)
 # Modelling and forecast
 
 ## SMA
-
-
+Simple Moving Average is a machine learning algorithm that forecasts future data by simply moving the average of the last n data before the data forecasted. However, since this algorithm is only able to forecast using data that has no trend and seasonality, this algorithm is not suitable to be used on this dataset (which has both trend and seasonality).
 
 ## SES, DES, TES
 
