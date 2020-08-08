@@ -74,24 +74,95 @@ We can see from the decomposed model that there is actually an upward trend in t
 
 # Cross Validation
 ```{r}
-train <- head(combine, -365) 
-test <- tail(combine, 365)
+train <- head(combine_ts, -365) 
+test <- tail(combine_ts, 365)
 ```
 
 # Modelling and forecast
 
 ## SMA
-Simple Moving Average is a machine learning algorithm that forecasts future data by simply moving the average of the last n data before the data forecasted. However, since this algorithm is only able to forecast using data that has no trend and seasonality, this algorithm is not suitable to be used on this dataset (which has both trend and seasonality).
+Simple Moving Average (SMA) is a machine learning algorithm that forecasts future data by simply moving the average of the last n data before the data forecasted. However, since this algorithm is only able to forecast using data that has no trend and seasonality, this algorithm is not suitable to be used on this dataset (which has both trend and seasonality).
 
 ## SES, DES, TES
+Similar to SMA, Simple Exponential Smoothing (SES) is more suitable for dataset that has no trend and no seasonality. The only difference between SES and SMA is that SES gives different weightage to the data in the dataset (more weightage to newer data than older), whereas SMA gives equal weightage to all data, regardless of how old or new they are (hence how irrelevant or relevant they are to future data prediction). However, with that being said, SES is still not possible to be used for this dataset that has both trend and seasonality.
 
+Double Exponential Smoothing (DES or Holt) works just like SES. It gives different weightage to the data in the dataset. However, similar to SES, this algorithm is not suitable for dataset that has both trend and seasonality as it is only suitable for dataset that only has trend but no seasonality.
 
+Triple Exponential Smoothing (TES or Holt Winters), on the other hand, works well with this dataset because it is suitable for datasets that have both trend and seasonality.
+
+```{r}
+train_hw <- HoltWinters(x = train)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(MLmetrics)
+hw_forecast <- forecast(train_hw, h = 365)
+MAPE(hw_forecast$mean, test)*100
+```
+
+For this particular Holt Winters model, the error of the prediction that the model generates is around 9%. For clarity sake, we will try to make a visualisation of how far off (or how reliable) the prediction is to the true data.
+
+```{r fig.height=8, fig.width=10}
+train %>% 
+  autoplot(series = "actual train") +
+  autolayer(test, series = "actual test") +
+  autolayer(hw_forecast$mean, series = "predicted")
+```
+From the visualisation, we can tell that the predictions made by this particular model is quite accurate for the most parts: it predicted the correct dates for the peaks and troughs. However, there is still several errors rendered that nonetheless could still be fixed.
 
 ## ARIMA
-
-
+AutoRegressive Integrated Moving Average (ARIMA) is a powerful algorithm that allows us to forecast future data better and more reliable. It adopts 2 methods: the moving average method that we previously have seen in SMA and also autoregressive method that we have seen in linear regression models before. However, this method does not work well with this particular dataset because ARIMA does not work well with dataset that has a seasonality.
 
 ## SARIMA
+Hence, to tackle the above problem, we use Seasonal ARIMA (SARIMA). SARIMA adopts the same approach as ARIMA, though it does tackle the seasonality aspect in a different way. It does differencing to the dataset to remove the trend and seasonality of the dataset in order to strip the data to its bare minimum, allowing for easier computation.
+
+```{r message=FALSE, warning=FALSE}
+library(tseries)
+adf.test(train)
+```
+H0: Data is not stationary
+H1: Data is stationary
+
+First of all, before we do differencing, we will have to do an ADF test on the dataset to see whether the data is stationary enough or not (stationary = no trend and no seasonality). However, according to the above p-value, since the p-value is > 0.05, we reject H1 and accept H0, meaning that we accept that the data is not stationary.
+
+To be very sure, we will conduct KPSS test to know for sure whether the data is stationary or not.
+
+```{r}
+kpss.test(train)
+```
+H0: Data is stationary
+H1: Data is not stationary
+
+According to the above p-value, the p-value is above 0.05, making us accept H0 and believe that the data is stationary. This directly contradicts with the conclusion we had with the ADF test. However, because the p-value here is not much bigger than 0.05, whereas the ADF p-value is much bigger than 0.05, I will conclude that it is more reliable to trust the ADF conclusion: the data is not stationary.
+
+Hence, we will have to do differencing to the data.
+
+```{r}
+train_diff <- train %>%
+  diff(lag = 365) %>% #remove seasonality
+  diff(lag = 1) #remove trend
+  
+adf.test(train_diff)
+kpss.test(train_diff)
+```
+From the above p-values, we can tell that by differencing the data once, the data is truly stationary now. We can try to decompose the data that has undergone differencing to see the difference.
+
+```{r}
+train_diff %>% 
+  decompose() %>% 
+  autoplot()
+
+train_diff %>% 
+  autoplot()
+```
+
+From the above visualisation, we can tell that the data has been stripped to its bare minimum (without any trend and seasonality). Next, we will proceed with SARIMA.
+
+### Fitting with SARIMA automatically
+```{r}
+train_auto <- auto.arima(train, seasonal = T)
+summary(train_auto)
+```
 
 
 
