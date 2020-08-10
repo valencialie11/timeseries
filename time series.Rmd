@@ -1,8 +1,14 @@
 ---
-title: "time series"
+title: "Mean Temperature Time Series Forecasting"
 author: "Valencia Lie"
 date: "01/08/2020"
-output: html_document
+output: 
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+    toc: true
+    number_sections: true
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -27,6 +33,7 @@ In this report, I will forecast future data about New Delhi's mean temperature b
   - Violation of Asumptions:
     - No autocorrelation between errors
     - Normality of error
+- Tuning and conclusion
 
 # Read data and pre-processing
 ```{r warning=FALSE, message=FALSE}
@@ -41,17 +48,26 @@ combine <- rbind(train, test)
 glimpse(combine)
 anyNA(combine)
 summary(combine)
+
+combine$monthyr <- format(as.Date(combine$date), "%Y-%m")
 ```
+
 From the summary for both the combined dataset, we can tell that there is no missing dates (consecutive dates in time series forecasting is incredibly important!) because the mean and median of the dates are exactly the same. 
+
+However, since the computation is too heavy, we will just extract the month and year of the dates in the dataset.
 
 # Exploratory Data Analysis 
 
 We will first do some visualisation to the mean temp data in the dataset to get a feel of the trend and seasonality.
-```{r warning=FALSE, message=FALSE}
+```{r fig.height=10}
 library(ggplot2)
 
-ggplot(data = combine, mapping = aes(x = date, y = meantemp)) +
-  geom_line() +
+combine_new <- combine %>% 
+  group_by(monthyr) %>% 
+  summarise(average = mean(meantemp))
+
+ggplot(data = combine_new, mapping = aes(x = monthyr, y = average)) +
+  geom_line(aes(group = 1)) +
   theme_minimal()
 ```
 
@@ -63,7 +79,7 @@ Logically, this pattern makes sense. This is because New Delhi experiences monso
 
 ```{r message=FALSE, warning=FALSE}
 library(forecast)
-combine_ts <- ts(data = combine$meantemp, start = c(2013,01), end = c(2017,04), frequency = 365)
+combine_ts <- ts(data = combine_new$average, start = c(2013,01), end = c(2017,04), frequency = 12)
 
 combine_ts %>% 
   decompose(type = "additive") %>% 
@@ -74,8 +90,8 @@ We can see from the decomposed model that there is actually an upward trend in t
 
 # Cross Validation
 ```{r}
-train <- head(combine_ts, -365) 
-test <- tail(combine_ts, 365)
+train <- head(combine_ts, -24) 
+test <- tail(combine_ts, 24)
 ```
 
 # Modelling and forecast
@@ -96,11 +112,11 @@ train_hw <- HoltWinters(x = train)
 
 ```{r message=FALSE, warning=FALSE}
 library(MLmetrics)
-hw_forecast <- forecast(train_hw, h = 365)
+hw_forecast <- forecast(train_hw, h = 24)
 MAPE(hw_forecast$mean, test)*100
 ```
 
-For this particular Holt Winters model, the error of the prediction that the model generates is around 9%. For clarity sake, we will try to make a visualisation of how far off (or how reliable) the prediction is to the true data.
+For this particular Holt Winters model, the error of the prediction that the model generates is around 6.49%. For clarity sake, we will try to make a visualisation of how far off (or how reliable) the prediction is to the true data.
 
 ```{r fig.height=8, fig.width=10}
 train %>% 
@@ -139,19 +155,17 @@ Hence, we will have to do differencing to the data.
 
 ```{r}
 train_diff <- train %>%
-  diff(lag = 365) %>% #remove seasonality
+  diff(lag = 12) %>% #remove seasonality
+  diff(lag = 1) %>% 
+  diff(lag = 1) %>% 
   diff(lag = 1) #remove trend
   
 adf.test(train_diff)
 kpss.test(train_diff)
 ```
-From the above p-values, we can tell that by differencing the data once, the data is truly stationary now. We can try to decompose the data that has undergone differencing to see the difference.
+From the above p-values, we can tell that by differencing the data thrice for the ARIMA (trend) and once for SARIMA (seasonality), the data is truly stationary now. We can try to decompose the data that has undergone differencing to see the difference.
 
 ```{r}
-train_diff %>% 
-  decompose() %>% 
-  autoplot()
-
 train_diff %>% 
   autoplot()
 ```
@@ -164,28 +178,123 @@ train_auto <- auto.arima(train, seasonal = T)
 summary(train_auto)
 ```
 
+According to the model auto generated, the 'best' SARIMA model is ARIMA(0,0,0)(0,1,0)[12]. However, we will try to compare it if with do the SARIMA model manually.
 
+### Fitting with SARIMA manually
+A typical SARIMA model index is ARIMA(p,d,q)(P,D,Q)[frequency].
+
+```{r fig.width=15, fig.height=10}
+tsdisplay(train_diff)
+```
+Based on the above visualisation,
+PACF
+SARIMA: it is difficult to see whether the PACF spikes at lags of multiples of 12 due to the small scale (only limited to 4) (P)
+ARIMA : PACF spikes at lag 1.  (p)
+
+ACF 
+SARIMA : it is difficult to see whether the ACF spikes at lags of multiples of 12 due to the small scale (only limited to 4) (Q)
+ARIMA : it is difficult to see as well but ACF spikes at around lag 1. (q)
+
+We will hence try to build a model with the index ARIMA(1,3,1)(0,1,0)[12], ARIMA(1,2,1)(0,1,0)[12] and ARIMA(1,1,1)(0,1,0)[12] and compare it with the auto generated model.
+
+```{r}
+library(forecast)
+train_sarima1 <- Arima(y = train, order = c(1,3,1), seasonal = list(order = c(0,1,0), period = 12))
+train_sarima2 <- Arima(y = train, order = c(1,2,1), seasonal = list(order = c(0,1,0), period = 12)) 
+train_sarima3 <- Arima(y = train, order = c(1,1,1), seasonal = list(order = c(0,1,0), period = 12)) 
+```
+
+```{r}
+summary(train_sarima1)
+summary(train_sarima2)
+summary(train_sarima3)
+```
+
+According to the summary of each model, the auto generated SARIMA model has a MAPE of 30.0%. On the other hand, the first manually built SARIMA model has a MAPE of 48.3%, the second manually built SARIMA model has a MAPE of 3.25% and the third manually built SARIMA model has a MAPE of 28.6%.
+
+However, this is only accurate if it is predicting the train dataset. Let's forecast it to the test dataset and see the MAPE of each model.
+
+```{r}
+auto_forecast <- forecast(object = train_auto, h = 24)
+sarima1_forecast <- forecast(object = train_sarima1, h = 24)
+sarima2_forecast <- forecast(object = train_sarima2, h = 24)
+sarima3_forecast <- forecast(object = train_sarima3, h = 24)
+```
+
+```{r}
+MAPE(auto_forecast$mean, test)*100
+MAPE(sarima1_forecast$mean, test)*100
+MAPE(sarima2_forecast$mean, test)*100
+MAPE(sarima3_forecast$mean, test)*100
+```
+From the above calculation, we can tell that the best model out of the 4 is the third manually built SARIMA model with a MAPE of 6.42%.
+
+```{r fig.height=10, fig.width=8}
+train %>% 
+  autoplot(series = "actual train") +
+  autolayer(test, series = "actual test") +
+  autolayer(auto_forecast$mean, series = "auto SARIMA predicted") +
+  autolayer(sarima1_forecast$mean, series = "SARIMA 1 predicted")+
+  autolayer(sarima2_forecast$mean, series = "SARIMA 2 predicted") +
+  autolayer(sarima3_forecast$mean, series = "SARIMA 3 predicted")
+```
+
+With the above visualisation, we can easily tell the best SARIMA models out of the four. The third manually built SARIMA model was able to predict future data better than the other two (clearly pinpointing when is the peak mean temperature and when is the trough).
 
 ## STLM
+STLM is a method of forecasting that combines STL (Seasonal and Trend decomposition using Loess) decomposition with method of forecasting. (exponential smoothing, ARIMA, etc)
 
+However, one very big downside to STLM is that it is unable to process data that is multiplicative. Thankfully, our dataset is additive, so there will be no problem using STLM on our dataset.
 
+```{r fig.height=4, fig.width=8}
+train_stlm <- stlm(y = train, method = "ets")
+stlm_forecast <- forecast(train_stlm, h = 24)
+train %>% 
+  autoplot(series = "actual train") +
+  autolayer(test, series = "actual test") +
+  autolayer(stlm_forecast, series = "STLM predicted")
+
+MAPE(stlm_forecast$mean, test)*100
+```
+
+Based on the above calculation, the STLM model generates a MAPE of 7.16%. The visualisation also tells us that the STLM model is generally accurate in forecasting future data (clearly indicating the correct dates for the peaks and troughs of the average temp).
 
 # Evaluation of model and comparison
 
-
-
-## RMSE, MAPE 
-
-
+## MAPE 
+Based on the MAPE of all the models, the clear winner is third manually built SARIMA model because it has the least percentage error compared to other models.
 
 ## Asumptions
 
-
-
 ### No autocorrelation between errors
+We will try to see whether the third manually SARIMA model is able to fulfill all assumptions.
 
+```{r}
+Box.test(train_sarima3$residuals)
+```
 
+H0: no-autocorrelation 
+H1: autocorrelation 
+
+Since the p-value of the test is more than 0.05. We reject H1 and accept H0. Hence, it can be said that this model has no autocorrelation between errors. 
+
+#### Why do we want no autocorrelation between errors?
+We want no autocorrelation between errors because the moment errors have autocorrelation with each other, we should minimise these errors because 1 error lead to another, which can be severely detrimental to our model as well as our forecasting results. 
 
 ### Normality of error
 
+```{r}
+shapiro.test(train_sarima3$residuals)
+```
 
+H0: residuals are distributed normally
+H1: residuals not distributed normally
+
+Since the p-value of the test is more than 0.05. We reject H1 and accept H0. Hence, it can be said that the residuals are distributed normally. 
+
+#### Why do we want errors that follow a normal distribution?
+When errors of a model follow a standard normal distribution, its mean will be at 0 and the majority of the data of the error will be close to 0, making the model more reliable as the error will statistically be close to 0. Hence, we will try to make sure that the errors of our model follow a close resemblance of a normal distribution.
+
+# Tuning and Conclusion
+
+Since our SARIMA model has a low MAPE and fulfills all the 2 assumptions, no tuning, as of now, is needed. However, with that being said, there may still be improvements that can be made to the model through some fine tunings in order to predict a more reliable and accurate future data. It is also worthy to note that perhaps daily data (where the frequency is 365) is better in forecasting than a monthly one, so perhaps some changes could be done to forecast even better results (though my laptop could not handle the heavy computation).
